@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { SonioxClient } from '@soniox/speech-to-text-web'
+
+// Note: SonioxClient is dynamically imported to avoid SSR issues with window object
 
 export interface TranscriptSegment {
   id: string
@@ -26,7 +27,7 @@ export function useSonioxTranscription({
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const sonioxClientRef = useRef<SonioxClient | null>(null)
+  const sonioxClientRef = useRef<any | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -51,7 +52,8 @@ export function useSonioxTranscription({
 
       streamRef.current = stream
 
-      // Create Soniox client
+      // Dynamically import and create Soniox client
+      const { SonioxClient } = await import('@soniox/speech-to-text-web')
       sonioxClientRef.current = new SonioxClient({
         apiKey: apiKey,
         bufferQueueSize: 1000,
@@ -72,7 +74,7 @@ export function useSonioxTranscription({
               const existingFinals = prev.filter(s => s.isFinal)
 
               // Process only the new tokens from this result
-              const incomingTokens = result.tokens.map((token: any) => ({
+              const incomingTokens: TranscriptSegment[] = result.tokens.map((token: any) => ({
                 id: `segment-${token.start_ms}-${token.end_ms}-${token.is_final ? 'f' : 'p'}`,
                 text: (token.text || '').trim().normalize('NFC'), // Normalize to composed form for proper Devanagari rendering
                 startTime: (token.start_ms || 0) / 1000,
@@ -82,8 +84,8 @@ export function useSonioxTranscription({
               }))
 
               // Separate final and provisional tokens from incoming
-              const incomingFinals = incomingTokens.filter(t => t.isFinal && t.text.length > 0)
-              const incomingProvisional = incomingTokens.filter(t => !t.isFinal && t.text.length > 0)
+              const incomingFinals = incomingTokens.filter((t: TranscriptSegment) => t.isFinal && t.text.length > 0)
+              const incomingProvisional = incomingTokens.filter((t: TranscriptSegment) => !t.isFinal && t.text.length > 0)
 
               // Deduplicate final tokens
               const allFinals = [...existingFinals]
@@ -106,8 +108,8 @@ export function useSonioxTranscription({
             })
           }
         },
-        onError: (status: number, message: string) => {
-          console.error('Soniox error:', status, message)
+        onError: (status: any, message: string, errorCode?: number) => {
+          console.error('Soniox error:', status, message, errorCode)
           setError(`Soniox error: ${message}`)
           setIsTranscribing(false)
           setIsConnected(false)
@@ -170,7 +172,8 @@ export function useSonioxTranscription({
 
       streamRef.current = stream
 
-      // Create Soniox client for tab audio
+      // Dynamically import and create Soniox client for tab audio
+      const { SonioxClient } = await import('@soniox/speech-to-text-web')
       sonioxClientRef.current = new SonioxClient({
         apiKey: apiKey,
         bufferQueueSize: 1000,
@@ -191,7 +194,7 @@ export function useSonioxTranscription({
               const existingFinals = prev.filter(s => s.isFinal)
 
               // Process only the new tokens from this result
-              const incomingTokens = result.tokens.map((token: any) => ({
+              const incomingTokens: TranscriptSegment[] = result.tokens.map((token: any) => ({
                 id: `segment-${token.start_ms}-${token.end_ms}-${token.is_final ? 'f' : 'p'}`,
                 text: (token.text || '').trim().normalize('NFC'), // Normalize to composed form for proper Devanagari rendering
                 startTime: (token.start_ms || 0) / 1000,
@@ -201,8 +204,8 @@ export function useSonioxTranscription({
               }))
 
               // Separate final and provisional tokens from incoming
-              const incomingFinals = incomingTokens.filter(t => t.isFinal && t.text.length > 0)
-              const incomingProvisional = incomingTokens.filter(t => !t.isFinal && t.text.length > 0)
+              const incomingFinals = incomingTokens.filter((t: TranscriptSegment) => t.isFinal && t.text.length > 0)
+              const incomingProvisional = incomingTokens.filter((t: TranscriptSegment) => !t.isFinal && t.text.length > 0)
 
               // Deduplicate final tokens
               const allFinals = [...existingFinals]
@@ -225,8 +228,8 @@ export function useSonioxTranscription({
             })
           }
         },
-        onError: (status: number, message: string) => {
-          console.error('Soniox error:', status, message)
+        onError: (status: any, message: string, errorCode?: number) => {
+          console.error('Soniox error:', status, message, errorCode)
           setError(`Soniox error: ${message}`)
           setIsTranscribing(false)
           setIsConnected(false)
