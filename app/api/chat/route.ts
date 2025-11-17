@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { logChatInteraction } from '@/lib/csvLogger'
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -62,6 +63,20 @@ export async function POST(request: NextRequest) {
       hasAnswer: !!result.answer
     })
 
+    // Log the interaction to CSV
+    await logChatInteraction({
+      timestamp: new Date().toISOString(),
+      studentName: studentName || 'unknown',
+      userQuery: message,
+      transcriptContext: recentTranscript,
+      isGenuine: result.is_genuine || false,
+      category: result.category || 'unknown',
+      confidence: result.confidence || 0,
+      reason: result.reason || '',
+      response: result.answer || null,
+      language: language
+    })
+
     // Only respond if it's a genuine doubt
     if (result.is_genuine) {
       return NextResponse.json({
@@ -110,88 +125,154 @@ function createPrompt(
   const name_str = studentName ? `\nStudent: ${studentName}` : ''
 
   if (language === 'hindi') {
-    return `पिछले 2 मिनट की कक्षा:
+    return `Previous 2 minutes of class transcript:
 ${transcript}
 
-छात्र का प्रश्न: "${query}"${name_str}
+Student's question: "${query}"${name_str}
 
 ---
 
-आपका काम:
+YOUR TASK:
 
-1️⃣ पहले तय करें - यह क्या है?
-   • असली प्रश्न (विषय से जुड़ा या मार्गदर्शन चाहिए)
-   • Follow-up प्रश्न (पिछली बात से जुड़ा - जैसे "F क्या है?", "यह कैसे निकाला?", "constant कैसे आया?")
-   • शोर (नमस्ते, हाँ, ठीक है जैसे शब्द)
+1️⃣ First, classify the question type:
+   • Genuine Question: Related to the subject being taught OR seeking guidance
+   • Follow-up Question: Connected to previous explanation (e.g., "What is F?", "How did you get this?", "Where did this constant come from?")
+   • Noise: Greetings, fillers, acknowledgments (hello, yes, okay, hmm, etc.)
 
-2️⃣ अगर असली प्रश्न या follow-up है तो उत्तर दें
-   • Follow-up के लिए: पिछली transcript देखकर context समझें और उसी topic पर जवाब दें
+2️⃣ If it's a genuine question or follow-up, provide an answer:
+   • For follow-ups: Carefully analyze the transcript to understand what was just taught
+   • Identify the specific concept, formula, or calculation being asked about
+   • Answer in the context of that ongoing explanation
 
 ---
 
-JSON में जवाब दें (KEYS अंग्रेजी में):
+RESPOND IN JSON FORMAT (keys in English):
 
 {
     "is_genuine": true/false,
     "category": "subject_doubt"/"follow_up"/"guidance"/"noise",
     "confidence": 0.0-1.0,
-    "reason": "हिंदी में छोटा कारण",
-    "answer": "उत्तर यहाँ" (असली प्रश्न या follow-up पर ही, नहीं तो null)
+    "reason": "Brief reason in Hindi explaining your classification",
+    "answer": "Answer here" (only for genuine/follow-up questions, otherwise null)
 }
 
 ---
 
-उत्तर कैसे लिखें (सिर्फ असली प्रश्नों और follow-ups के लिए):
+HOW TO WRITE THE ANSWER (only for genuine and follow-up questions):
 
-📝 ढांचा (45-50 शब्द, 5-6 लाइन):
+📝 STRUCTURE (40-50 words, 5-6 lines):
    
-   पहली लाइन: ${studentName ? `${studentName} बेटा!` : 'बेटा!'}
+   Line 1: ${studentName ? studentName + ' बेटा!' : 'बेटा!'}
    
-   खाली लाइन: \\n\\n
+   Empty line: \\n\\n
    
-   बीच की लाइन: मुख्य बात समझाएं (follow-up के लिए पिछले context से जोड़कर)
+   Middle lines: Core explanation (for follow-ups, connect to what was just taught in transcript)
    
-   खाली लाइन: \\n\\n
+   Empty line: \\n\\n
    
-   आखिरी लाइन: सूत्र या छोटा उदाहरण
+   Last line: Formula or brief example
 
 ---
 
-✅ करें:
-   • आसान भाषा में समझाएं
-   • Follow-up questions में transcript का context use करें
-   • ज़रूरी जगह पर \\n\\n डालें
-   • शिक्षक की तरह प्यार से बोलें
-   • सीधा जवाब दें
+✅ DO:
+   • Use simple, conversational Hindi
+   • For follow-ups, reference what was just explained in the transcript
+   • Insert \\n\\n at appropriate places for readability
+   • Speak warmly like a caring teacher
+   • Give direct, focused answers
+   • Keep it concise (40-50 words maximum)
 
-❌ न करें:
-   • HTML टैग नहीं (<b>, <i>)
-   • Markdown नहीं (**, ##, -)
-   • Bullet points नहीं (•, *, -)
-
----
-
-उदाहरण:
-
-**मुख्य प्रश्न:**
-"राज बेटा!\\n\\nबल का मतलब है धक्का या खिंचाव। फॉर्मूला है: बल = द्रव्यमान × त्वरण।\\n\\nयहाँ 5 kg × 3 m/s² = 15 N आएगा। समझ आया?"
-
-**Follow-up (जैसे "त्वरण क्या है?"):**
-"राज बेटा!\\n\\nत्वरण का मतलब है velocity में बदलाव। यह बताता है कि speed कितनी तेज़ी से बढ़ रही है।\\n\\nUnit है m/s², जो मीटर प्रति सेकंड² होता है।"
-
-**Follow-up (जैसे "15 N कैसे आया?"):**
-"राज बेटा!\\n\\n15 N इसलिए आया क्योंकि हमने द्रव्यमान को त्वरण से गुणा किया।\\n\\n5 kg × 3 m/s² = 15 Newton (N)। यही बल का फॉर्मूला है!"
-
-(शब्द: लगभग 40-50)
+❌ DON'T:
+   • No HTML tags (<b>, <i>, <br>)
+   • No Markdown (**, ##, -, \`\`\`)
+   • No bullet points (•, *, -)
+   • Don't repeat the entire explanation, just clarify the specific doubt
 
 ---
 
-⚠️ ध्यान दें:
-- सिर्फ valid JSON में output दें
-- JSON keys अंग्रेजी में (is_genuine, category, etc.)
-- Answer में \\n\\n ज़रूर use करें
-- Follow-up questions के लिए हमेशा transcript देखें और context समझें
-- "F क्या?", "कैसे निकाला?", "कैसे आया?" जैसे questions को follow_up category में रखें`
+EXAMPLES:
+
+**Example 1 - Main Question:**
+Question: "बल क्या होता है?"
+Transcript: [Empty or different topic]
+
+Answer:
+"राज बेटा!\\n\\nबल का मतलब है धक्का या खिंचाव। फॉर्मूला है: बल = द्रव्यमान × त्वरण।\\n\\nजैसे 5 kg × 3 m/s² = 15 N आएगा।"
+
+(Category: "subject_doubt")
+
+---
+
+**Example 2 - Follow-up Question:**
+Question: "त्वरण क्या है?"
+Transcript: "...बल का फॉर्मूला है F = m × a, जहाँ m द्रव्यमान है और a त्वरण है..."
+
+Answer:
+"राज बेटा!\\n\\nत्वरण यानी acceleration - यह बताता है velocity कितनी तेज़ी से बदल रही है।\\n\\nइसकी unit m/s² है, मतलब मीटर प्रति सेकंड स्क्वायर।"
+
+(Category: "follow_up", Reason: "छात्र ने बल के फॉर्मूले में आए 'a' के बारे में पूछा")
+
+---
+
+**Example 3 - Follow-up Question:**
+Question: "15 N कैसे आया?"
+Transcript: "...देखो, अगर द्रव्यमान 5 kg है और त्वरण 3 m/s² है, तो बल = 5 × 3 = 15 Newton..."
+
+Answer:
+"राज बेटा!\\n\\n15 N आया क्योंकि हमने 5 kg को 3 m/s² से गुणा किया। F = m × a के फॉर्मूले से।\\n\\n5 × 3 = 15 Newton, बस इतना ही!"
+
+(Category: "follow_up", Reason: "छात्र calculation के बारे में पूछ रहा है जो अभी समझाई गई")
+
+---
+
+**Example 4 - Follow-up Question:**
+Question: "constant कहाँ से आया?"
+Transcript: "...इस equation को integrate करने पर x = ½at² + C मिलता है, जहाँ C एक constant है..."
+
+Answer:
+"राज बेटा!\\n\\nConstant C integration से आता है। जब हम integrate करते हैं तो हमेशा एक constant add होता है।\\n\\nयह initial conditions से तय होता है।"
+
+(Category: "follow_up", Reason: "integration में आए constant के बारे में doubt है")
+
+---
+
+**Example 5 - Noise:**
+Question: "हाँ"
+Transcript: "...समझ आया? ठीक है चलो अगला example देखते हैं..."
+
+Answer: null
+
+(Category: "noise", is_genuine: false, Reason: "सिर्फ acknowledgment है, कोई प्रश्न नहीं")
+
+---
+
+⚠️ CRITICAL INSTRUCTIONS:
+
+1. **For Follow-up Questions:**
+   - ALWAYS read the transcript carefully
+   - Identify what concept/formula/calculation was just explained
+   - Answer specifically about that part
+   - Use phrases like "जो अभी हमने देखा", "इसी calculation में", "इस फॉर्मूले में"
+
+2. **Common Follow-up Patterns:**
+   - "X क्या है?" → Student asking about a term/variable just mentioned
+   - "यह कैसे आया?" → Student asking about a result/number just calculated
+   - "कैसे निकाला?" → Student asking about the method just used
+   - "constant कहाँ से आया?" → Student asking about a constant in the formula
+   - "क्यों?" → Student asking why something was done
+
+3. **Output Format:**
+   - Output ONLY valid JSON
+   - Keys must be in English
+   - Use \\n\\n for line breaks in answer
+   - Keep answers 40-50 words maximum
+   - Maintain warm, teacher-like tone in Hindi
+
+4. **Quality Check:**
+   - Is the answer directly addressing what was just taught?
+   - Is it concise (40-50 words)?
+   - Does it have proper \\n\\n spacing?
+   - Is it in simple Hindi without formatting marks?`
   } else {
     return `CONTEXT (Last 2 minutes class teaching):
 ${transcript}
@@ -213,7 +294,7 @@ JSON FORMAT output:
 
 Answer Guidelines (only for genuine doubts):
 ✅ STRUCTURE - Concise answer (5-6 lines, 35-40 words):
-   • Line 1: ${studentName ? `Hello ${studentName} beta! ` : 'Beta! '}
+   • Line 1: ${studentName ? 'Hello ' + studentName + ' beta! ' : 'Beta! '}
    • Line 2: Empty line (\\n\\n)
    • Line 3: Explain core concept in 1-2 sentences
    • Line 4: Empty line (\\n\\n)
