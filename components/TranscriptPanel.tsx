@@ -1,9 +1,11 @@
 "use client"
 
-import React, { useEffect, useRef, useMemo } from 'react'
+import React, { useEffect, useRef, useMemo, useState } from 'react'
+import { Copy, Check } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import type { TranscriptSegment } from '@/hooks/useSonioxTranscription'
@@ -22,6 +24,7 @@ export default function TranscriptPanel({
   const rawScrollAreaRef = useRef<HTMLDivElement>(null)
   const processedScrollAreaRef = useRef<HTMLDivElement>(null)
   const shouldAutoScrollRef = useRef(true)
+  const [copied, setCopied] = useState(false)
 
   // Detect if text contains Hindi/Devanagari characters
   const containsDevanagari = (text: string) => {
@@ -116,6 +119,28 @@ export default function TranscriptPanel({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
 
+  // Copy complete transcript to clipboard
+  const handleCopyTranscript = async () => {
+    try {
+      // Get complete transcript text
+      const completeText = processedTranscript
+        .map(sentence => `[${formatTime(sentence.startTime)}] ${sentence.text}`)
+        .join('\n\n')
+
+      if (!completeText) {
+        return
+      }
+
+      await navigator.clipboard.writeText(completeText)
+      setCopied(true)
+
+      // Reset after 2 seconds
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      console.error('Failed to copy transcript:', error)
+    }
+  }
+
   // Check if a segment is currently active
   const isSegmentActive = (segment: TranscriptSegment) => {
     return currentTime >= segment.startTime && currentTime <= segment.endTime
@@ -142,6 +167,20 @@ export default function TranscriptPanel({
               {processedTranscript.length} sentences
             </Badge>
           )}
+          <Button
+            onClick={handleCopyTranscript}
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            disabled={processedTranscript.length === 0}
+            title="Copy complete transcript"
+          >
+            {copied ? (
+              <Check className="h-4 w-4 text-green-600" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </Button>
         </div>
       </div>
 
