@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from 'react'
-import { X, User, Bot, Loader2, FileText } from 'lucide-react'
+import { X, User, Bot, Loader2, FileText, Camera } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
@@ -26,6 +26,8 @@ interface ChatDialogProps {
   videoTime: number
   language?: string
   className?: string
+  videoElement?: HTMLVideoElement | null
+  isYouTubeVideo?: boolean
 }
 
 export default function ChatDialog({
@@ -34,11 +36,14 @@ export default function ChatDialog({
   transcript,
   videoTime,
   language = 'en',
-  className
+  className,
+  videoElement = null,
+  isYouTubeVideo = false
 }: ChatDialogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [pdfContext, setPdfContext] = useState<string>('')
+  const [isScanning, setIsScanning] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
@@ -55,6 +60,106 @@ export default function ChatDialog({
       videoTime - segment.startTime <= 200 // 2 minutes = 120 seconds
     )
     return recentSegments.map(s => s.text).join(' ')
+  }
+
+  // Capture video frame and analyze with vision API
+  const handleScanBoard = async () => {
+    setIsScanning(true)
+
+    try {
+      let imageData: string
+
+      if (isYouTubeVideo) {
+        // For YouTube videos, request screen/tab capture
+        console.log('Requesting screen capture for YouTube video...')
+
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { mediaSource: 'screen' as any }
+        })
+
+        // Create a temporary video element to play the stream
+        const tempVideo = document.createElement('video')
+        tempVideo.srcObject = stream
+        tempVideo.muted = true
+        await tempVideo.play()
+
+        // Wait a moment for the video to render
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+        // Create canvas to capture frame
+        const canvas = document.createElement('canvas')
+        canvas.width = tempVideo.videoWidth
+        canvas.height = tempVideo.videoHeight
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          throw new Error('Could not get canvas context')
+        }
+
+        // Draw current frame to canvas
+        ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height)
+
+        // Convert to base64
+        imageData = canvas.toDataURL('image/jpeg', 0.8)
+
+        // Stop the stream and clean up
+        stream.getTracks().forEach(track => track.stop())
+        tempVideo.remove()
+
+        console.log('Captured YouTube frame successfully')
+      } else {
+        // For local videos, use the video element directly
+        if (!videoElement) {
+          console.error('No video element available')
+          return
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = videoElement.videoWidth
+        canvas.height = videoElement.videoHeight
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          throw new Error('Could not get canvas context')
+        }
+
+        // Draw current video frame to canvas
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height)
+
+        // Convert canvas to base64 image
+        imageData = canvas.toDataURL('image/jpeg', 0.8)
+
+        console.log('Captured local video frame successfully')
+      }
+
+      console.log('Sending frame to vision API...')
+
+      // Call vision API
+      const response = await fetch('/api/vision/analyze-board', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ image: imageData })
+      })
+
+      if (!response.ok) {
+        throw new Error('Vision API request failed')
+      }
+
+      const data = await response.json()
+
+      // Update pdfContext with the description
+      setPdfContext(data.description || '')
+
+      console.log('Board scan completed successfully')
+
+    } catch (error) {
+      console.error('Error scanning board:', error)
+      // Could add error toast notification here
+    } finally {
+      setIsScanning(false)
+    }
   }
 
   // Send message to API
@@ -269,9 +374,30 @@ export default function ChatDialog({
 
       {/* PDF/Board Context */}
       <div className="p-4 border-t space-y-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <FileText className="h-4 w-4" />
-          <label htmlFor="pdf-context">Board Context</label>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <FileText className="h-4 w-4" />
+            <label htmlFor="pdf-context">Board Context</label>
+          </div>
+          <Button
+            onClick={handleScanBoard}
+            size="sm"
+            variant="outline"
+            disabled={isScanning || (!isYouTubeVideo && !videoElement)}
+            className="gap-2"
+          >
+            {isScanning ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <Camera className="h-3 w-3" />
+                Scan Board
+              </>
+            )}
+          </Button>
         </div>
         <Textarea
           id="pdf-context"
@@ -281,7 +407,7 @@ export default function ChatDialog({
           className="min-h-[80px] text-sm resize-none"
         />
         <p className="text-xs text-muted-foreground">
-          This helps the AI understand what you're currently teaching
+          Click "Scan Board" to auto-detect board content, or type manually
         </p>
       </div>
 

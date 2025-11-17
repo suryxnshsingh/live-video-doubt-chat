@@ -230,6 +230,8 @@ export default function Home() {
           transcript={transcript}
           videoTime={currentVideoTime}
           language={language}
+          videoElement={videoElementRef.current}
+          isYouTubeVideo={videoSource.type === 'youtube'}
         />
       )}
 
