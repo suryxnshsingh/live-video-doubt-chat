@@ -45,10 +45,10 @@ export default function ChatDialog({
     }
   }, [messages])
 
-  // Get recent transcript for context (last 5 minutes)
+  // Get recent transcript for context (last 2 minutes)
   const getRecentTranscript = () => {
     const recentSegments = transcript.filter(segment =>
-      videoTime - segment.startTime <= 300 // 5 minutes = 300 seconds
+      videoTime - segment.startTime <= 120 // 2 minutes = 120 seconds
     )
     return recentSegments.map(s => s.text).join(' ')
   }

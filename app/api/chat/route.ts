@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       message,
       videoTimestamp = 0,
       recentTranscript = '',
-      studentName = null,
+      studentName = 'ekta',
       language = 'hindi'
     } = body
 
@@ -32,9 +32,17 @@ export async function POST(request: NextRequest) {
     const prompt = createPrompt(message, recentTranscript, language, studentName)
     const systemPrompt = getSystemPrompt(language)
 
+    // Print complete prompts for debugging
+    console.log('\n========== COMPLETE PROMPT TO GPT ==========')
+    console.log('\n--- SYSTEM PROMPT ---')
+    console.log(systemPrompt)
+    console.log('\n--- USER PROMPT ---')
+    console.log(prompt)
+    console.log('\n========== END OF PROMPT ==========\n')
+
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', // Using GPT-4o mini for faster and cost-effective responses
+      model: 'gpt-5-mini', // Using GPT-4o mini for faster and cost-effective responses
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt }
@@ -95,7 +103,6 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
 function createPrompt(
   query: string,
   transcript: string,
@@ -105,54 +112,97 @@ function createPrompt(
   const name_str = studentName ? `\nStudent: ${studentName}` : ''
 
   if (language === 'hindi') {
-    return `संदर्भ (Last 5 minutes class teaching):
+    return `पिछले 2 मिनट की कक्षा:
 ${transcript}
 
 छात्र का प्रश्न: "${query}"${name_str}
 
-कार्य: दो चीजें करें -
-1. क्या यह genuine doubt है? (subject doubt/guidance) या noise है? (greetings/random/single words)
-2. अगर genuine है तो उत्तर दें proper formatting के साथ
+---
 
-JSON FORMAT में output:
+आपका काम:
+
+1️⃣ पहले तय करें - यह क्या है?
+   • असली प्रश्न (विषय से जुड़ा या मार्गदर्शन चाहिए)
+   • शोर (नमस्ते, हाँ, ठीक है जैसे शब्द)
+
+2️⃣ अगर असली प्रश्न है तो उत्तर दें
+
+---
+
+JSON में जवाब दें (KEYS अंग्रेजी में):
+
 {
     "is_genuine": true/false,
     "category": "subject_doubt"/"guidance"/"noise",
     "confidence": 0.0-1.0,
-    "reason": "brief reason in Hindi",
-    "answer": "properly formatted answer with line breaks" (only if genuine, else null)
+    "reason": "हिंदी में छोटा कारण",
+    "answer": "उत्तर यहाँ" (असली प्रश्न पर ही, नहीं तो null)
 }
 
-Answer Guidelines (केवल genuine doubts के लिए):
-✅ STRUCTURE - इस format में answer दें:
-   • Line 1: ${studentName ? `Arre ${studentName} बेटा! ` : 'बेटा! '}warm greeting
-   • Line 2: Empty line (\\n\\n for separation)
-   • Line 3-4: Main explanation या concept
-   • Line 5: Empty line
-   • Line 6-7: Formula या calculation (अगर applicable हो)
-   • Line 8: Empty line
-   • Line 9-10: Example with numbers
-   • Line 11: Empty line
-   • Line 12: Class reference या final point
+---
 
-✅ FORMATTING RULES:
-   • हर major point के बाद \\n\\n (double line break) use करें
-   • Formulas को separate line में लिखें
-   • Examples को clearly separate करें
-   • 5-7 sentences total, well-organized
-   • Natural teacher tone maintain करें
+उत्तर कैसे लिखें (सिर्फ असली प्रश्नों के लिए):
 
-✅ CONTENT:
-   • Class context reference: "याद है हमने क्लास में..."
-   • Working example with actual numbers
-   • Formula clearly visible
-   • Warm, encouraging tone
+📝 ढांचा (45-50 शब्द, 5-6 लाइन):
+   
+   पहली लाइन: ${studentName ? `${studentName} बेटा!` : 'बेटा!'}
+   
+   खाली लाइन: \\n\\n
+   
+   बीच की लाइन: मुख्य बात समझाएं
+   
+   खाली लाइन: \\n\\n
+   
+   आखिरी लाइन: सूत्र या छोटा उदाहरण
 
-❌ DON'T USE: HTML tags, markdown symbols (**, ##, etc.), bullet points (•, -, *)
+---
 
-**Output केवल valid JSON में दें। Answer में proper line breaks (\\n\\n) जरूर use करें।**`
+✅ करें:
+   • आसान भाषा में समझाएं
+   • ज़रूरी जगह पर \\n\\n डालें
+   • शिक्षक की तरह प्यार से बोलें
+   • सीधा जवाब दें
+
+❌ न करें:
+   • HTML टैग नहीं (<b>, <i>)
+   • Markdown नहीं (**, ##, -)
+   • Bullet points नहीं (•, *, -)
+
+---
+
+उदाहरण:
+
+"राज बेटा!\\n\\nबल का मतलब है धक्का या खिंचाव। फॉर्मूला है: बल = द्रव्यमान × त्वरण।\\n\\nयहाँ 5 kg × 3 m/s² = 15 N आएगा। समझ आया?"
+
+(शब्द: लगभग 45-50)
+
+---
+Example:-  
+
+---
+
+उदाहरण 1:
+
+"राज बेटा!\\n\\nबल का मतलब है धक्का या खिंचाव। फॉर्मूला है: बल = द्रव्यमान × त्वरण।\\n\\nयहाँ 5 kg × 3 m/s² = 15 N आएगा। समझ आया?"
+
+(शब्द: लगभग 35-40)
+
+---
+
+उदाहरण 2:
+
+"Ekta बेटा!\\n\\nTransitive relation वह होता है जिसमें यदि A R B और B R C हैं, तो A R C भी होगा।\\n\\nउदाहरण: अगर 1 < 2 और 2 < 3, तो 1 < 3 भी होगा।"
+
+(शब्द: लगभग 40-45)
+
+---
+
+⚠️ ध्यान दें:
+- सिर्फ valid JSON में output दें
+- JSON keys अंग्रेजी में (is_genuine, category, etc.)
+- Answer में \\n\\n ज़रूर use करें`
   } else {
-    return `CONTEXT (Last 5 minutes class teaching):
+    return `CONTEXT (Last 2 minutes class teaching):
 ${transcript}
 
 Student Query: "${query}"${name_str}
@@ -171,52 +221,51 @@ JSON FORMAT output:
 }
 
 Answer Guidelines (only for genuine doubts):
-✅ STRUCTURE - Answer in this format:
-   • Line 1: ${studentName ? `Arre ${studentName} beta! ` : 'Beta! '}warm greeting
-   • Line 2: Empty line (\\n\\n for separation)
-   • Line 3-4: Main explanation/concept
-   • Line 5: Empty line
-   • Line 6-7: Formula/calculation (if applicable)
-   • Line 8: Empty line
-   • Line 9-10: Example with numbers
-   • Line 11: Empty line
-   • Line 12: Class reference or final point
+✅ STRUCTURE - Concise answer (5-6 lines, 35-40 words):
+   • Line 1: ${studentName ? `Hello ${studentName} beta! ` : 'Beta! '}
+   • Line 2: Empty line (\\n\\n)
+   • Line 3: Explain core concept in 1-2 sentences
+   • Line 4: Empty line (\\n\\n)
+   • Line 5: Formula or brief example
+   • Line 6: Final encouragement
 
 ✅ FORMATTING RULES:
-   • Use \\n\\n (double line break) after each major point
-   • Write formulas on separate lines
-   • Clearly separate examples
-   • 5-7 sentences total, well-organized
+   • Use \\n\\n only after important points
+   • Keep total to 35-40 words
+   • Direct and clear answer
    • Maintain natural teacher tone
 
 ✅ CONTENT:
+   • Understand question, explain core concept briefly
+   • Include formula or one short example if needed
+   • Warm, concise tone
    • Natural Hinglish mix (Hindi words + English sentences)
-   • Class context reference: "Yaad hai class mein humne..."
-   • Working example with actual numbers
-   • Formula clearly visible
-   • Warm, encouraging tone
 
 ❌ DON'T USE: HTML tags, markdown symbols (**, ##, etc.), bullet points (•, -, *)
+
+EXAMPLE OUTPUT FORMAT:
+"Hello Priya beta!\\n\\nForce = mass × acceleration. Here 5 kg × 3 m/s² = 15 N.\\n\\nSamajh aa gaya na? Question ho toh pooch lena!"
+
+(Word count: approximately 35-40 words)
 
 **Give output in valid JSON ONLY. Use proper line breaks (\\n\\n) in the answer.**`
   }
 }
-
 function getSystemPrompt(language: string): string {
   if (language === 'hindi') {
-    return `आप MP Board कक्षा 12वीं के expert teacher हैं।
-Live class में students के doubts solve करते हैं।
-यह one-shot Q&A है - हर question independent है, कोई conversation history नहीं।
+    return `आप मध्य प्रदेश बोर्ड कक्षा 12वीं के विशेषज्ञ शिक्षक हैं।
+सीधा प्रसारण कक्षा में विद्यार्थियों के संदेह हल करते हैं।
 दो कार्य करें:
-(1) query को classify करें (genuine vs noise)
-(2) अगर genuine है तो properly formatted answer दें with proper line breaks (\\n\\n)
+(1) प्रश्न को वर्गीकृत करें (वास्तविक बनाम शोर)
+(2) अगर वास्तविक है तो उचित प्रारूपित उत्तर दें उचित पंक्ति विराम (\\n\\n) के साथ
 
-IMPORTANT: Answer में proper formatting use करें - हर major point के बाद \\n\\n line break दें।
-केवल valid JSON format में respond करें।`
+महत्वपूर्ण:
+- उत्तर में उचित प्रारूपण उपयोग करें - हर प्रमुख बिंदु के बाद \\n\\n पंक्ति विराम दें।
+- JSON keys ENGLISH में ही दें (is_genuine, category, confidence, reason, answer)
+- केवल वैध JSON प्रारूप में प्रतिक्रिया दें।`
   } else {
     return `You are an MP Board class 12th expert teacher.
 You solve students' doubts in live classes.
-This is one-shot Q&A - each question is independent, no conversation history.
 Do two tasks:
 (1) classify the query (genuine vs noise)
 (2) if genuine, give properly formatted answer in Hinglish with proper line breaks (\\n\\n)
