@@ -1,11 +1,12 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from 'react'
-import { X, User, Bot, Loader2 } from 'lucide-react'
+import { X, User, Bot, Loader2, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import ChatInput from './ChatInput'
 import { cn } from '@/lib/utils'
 import type { TranscriptSegment } from '@/hooks/useSonioxTranscription'
@@ -37,6 +38,7 @@ export default function ChatDialog({
 }: ChatDialogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [pdfContext, setPdfContext] = useState<string>('')
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
@@ -85,7 +87,8 @@ export default function ChatDialog({
           message: messageText,
           videoTimestamp: videoTime,
           recentTranscript,
-          language: apiLanguage
+          language: apiLanguage,
+          pdfContext: pdfContext
           // No chat history - one input/output setup only
         })
       })
@@ -263,6 +266,24 @@ export default function ChatDialog({
           )}
         </div>
       </ScrollArea>
+
+      {/* PDF/Board Context */}
+      <div className="p-4 border-t space-y-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <FileText className="h-4 w-4" />
+          <label htmlFor="pdf-context">Board Context</label>
+        </div>
+        <Textarea
+          id="pdf-context"
+          placeholder="What's on the board? (formulas, diagrams, current topic being taught...)"
+          value={pdfContext}
+          onChange={(e) => setPdfContext(e.target.value)}
+          className="min-h-[80px] text-sm resize-none"
+        />
+        <p className="text-xs text-muted-foreground">
+          This helps the AI understand what you're currently teaching
+        </p>
+      </div>
 
       {/* Input */}
       <div className="p-4 border-t">
