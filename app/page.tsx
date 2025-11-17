@@ -9,16 +9,27 @@ import AskButton from '@/components/AskButton'
 import ChatDialog from '@/components/ChatDialog'
 import { useSonioxTranscription } from '@/hooks/useSonioxTranscription'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Languages } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+type Language = 'en' | 'hi' | 'hinglish'
 
 export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [currentVideoTime, setCurrentVideoTime] = useState(0)
   const [isVideoPlaying, setIsVideoPlaying] = useState(false)
   const [videoSource, setVideoSource] = useState<{ type: 'youtube' | 'local', url: string } | null>(null)
+  const [language, setLanguage] = useState<Language>('en')
   const videoElementRef = useRef<HTMLVideoElement | null>(null)
+  const hasStartedTranscriptionRef = useRef(false) // Track if transcription was started for this video
 
-  // Initialize Soniox transcription
+  // Initialize Soniox transcription (always uses Hindi)
   // Note: Add your Soniox API key in environment variables
   const {
     transcript,
@@ -30,7 +41,7 @@ export default function Home() {
     error: transcriptionError
   } = useSonioxTranscription({
     apiKey: process.env.NEXT_PUBLIC_SONIOX_API_KEY,
-    language: 'hi' // Hindi
+    language: 'hi' // Always Hindi for video transcription
   })
 
   // Handle video source selection
@@ -41,6 +52,7 @@ export default function Home() {
     // Reset states
     setCurrentVideoTime(0)
     setIsVideoPlaying(false)
+    hasStartedTranscriptionRef.current = false // Reset transcription flag for new video
   }
 
   // Handle back to source selection
@@ -53,6 +65,7 @@ export default function Home() {
     setCurrentVideoTime(0)
     setIsVideoPlaying(false)
     setIsChatOpen(false)
+    hasStartedTranscriptionRef.current = false // Reset transcription flag
   }
 
   // Handle video ready
@@ -64,8 +77,10 @@ export default function Home() {
   // Handle video play
   const handleVideoPlay = useCallback(async () => {
     setIsVideoPlaying(true)
-    if (!isTranscribing) {
+    // Only start transcription once per video session (not on every play/scrub)
+    if (!isTranscribing && !hasStartedTranscriptionRef.current) {
       try {
+        hasStartedTranscriptionRef.current = true
         if (videoSource?.type === 'youtube') {
           // For YouTube, we need to capture tab audio
           await startTabAudioTranscription()
@@ -77,6 +92,8 @@ export default function Home() {
         }
       } catch (error) {
         console.error('Failed to start transcription:', error)
+        // Reset flag on error so user can try again
+        hasStartedTranscriptionRef.current = false
       }
     }
   }, [isTranscribing, startTranscription, startTabAudioTranscription, videoSource])
@@ -84,11 +101,10 @@ export default function Home() {
   // Handle video pause
   const handleVideoPause = useCallback(() => {
     setIsVideoPlaying(false)
-    if (isTranscribing) {
-      stopTranscription()
-      console.log('Stopped transcription')
-    }
-  }, [isTranscribing, stopTranscription])
+    // Don't stop transcription on pause - let it continue running
+    // This prevents issues when scrubbing through the video
+    // Transcription will only stop when changing videos or explicitly stopping
+  }, [])
 
   // Handle video time update
   const handleVideoTimeUpdate = useCallback((time: number) => {
@@ -110,17 +126,36 @@ export default function Home() {
                 Real-time transcription with AI-powered assistance
               </p>
             </div>
-            {videoSource && (
-              <Button
-                onClick={handleBackToSelection}
-                variant="outline"
-                size="sm"
-                className="gap-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Change Video
-              </Button>
-            )}
+            <div className="flex items-center gap-3">
+              {/* Language Selector (for chat/LLM responses only) */}
+              <div className="flex items-center gap-2">
+                <Languages className="h-4 w-4 text-muted-foreground" />
+                <Select
+                  value={language}
+                  onValueChange={(value) => setLanguage(value as Language)}
+                >
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="hi">Hindi</SelectItem>
+                    <SelectItem value="hinglish">Hinglish</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {videoSource && (
+                <Button
+                  onClick={handleBackToSelection}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Change Video
+                </Button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -194,6 +229,7 @@ export default function Home() {
           onClose={() => setIsChatOpen(false)}
           transcript={transcript}
           videoTime={currentVideoTime}
+          language={language}
         />
       )}
 

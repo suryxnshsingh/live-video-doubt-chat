@@ -116,14 +116,28 @@ export function useSonioxTranscription({
         }
       })
 
-      // Start transcription with custom stream
+      // Configure for Hindi with Devanagari script (not Urdu)
+      const languageConfig = {
+        languageCode: 'hi-IN',
+        // Strong hints for Devanagari script
+        hints: [
+          'हिंदी देवनागरी',
+          'देवनागरी लिपि',
+          'Hindi Devanagari script',
+          'not Urdu',
+          'not Arabic script'
+        ],
+        enableAutomaticPunctuation: true,
+        // Try to force better Hindi recognition
+        enableSeparateRecognitionPerChannel: false
+      }
+
+      // Start transcription with custom stream - using v3 model for better Hindi support
       await sonioxClientRef.current.start({
-        model: 'stt-rt-preview',
+        model: 'stt-rt-v3',
         stream: stream,
         includeNonfinal: true,
-        speechContext: {
-          languageCode: language === 'hi' ? 'hi-IN' : 'en-US'
-        }
+        speechContext: languageConfig
       })
 
     } catch (error) {
@@ -236,14 +250,28 @@ export function useSonioxTranscription({
         }
       })
 
+      // Configure for Hindi with Devanagari script (not Urdu)
+      const languageConfig = {
+        languageCode: 'hi-IN',
+        // Strong hints for Devanagari script
+        hints: [
+          'हिंदी देवनागरी',
+          'देवनागरी लिपि',
+          'Hindi Devanagari script',
+          'not Urdu',
+          'not Arabic script'
+        ],
+        enableAutomaticPunctuation: true,
+        // Try to force better Hindi recognition
+        enableSeparateRecognitionPerChannel: false
+      }
+
       // Start transcription with tab audio stream
       await sonioxClientRef.current.start({
         model: 'stt-rt-v3',
         stream: stream,
         includeNonfinal: true,
-        speechContext: {
-          languageCode: language === 'hi' ? 'hi-IN' : 'en-US'
-        }
+        speechContext: languageConfig
       })
 
     } catch (error) {

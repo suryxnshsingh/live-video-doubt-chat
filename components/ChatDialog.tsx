@@ -23,6 +23,7 @@ interface ChatDialogProps {
   onClose: () => void
   transcript: TranscriptSegment[]
   videoTime: number
+  language?: string
   className?: string
 }
 
@@ -31,6 +32,7 @@ export default function ChatDialog({
   onClose,
   transcript,
   videoTime,
+  language = 'en',
   className
 }: ChatDialogProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -70,6 +72,9 @@ export default function ChatDialog({
       // Get recent transcript for context
       const recentTranscript = getRecentTranscript()
 
+      // Map language code to API format
+      const apiLanguage = language === 'en' ? 'english' : language === 'hi' ? 'hindi' : 'english'
+
       // Call API
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -79,7 +84,8 @@ export default function ChatDialog({
         body: JSON.stringify({
           message: messageText,
           videoTimestamp: videoTime,
-          recentTranscript
+          recentTranscript,
+          language: apiLanguage
           // No chat history - one input/output setup only
         })
       })
@@ -263,6 +269,7 @@ export default function ChatDialog({
         <ChatInput
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
+          language={language}
         />
       </div>
     </div>

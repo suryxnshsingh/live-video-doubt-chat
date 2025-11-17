@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 interface ChatInputProps {
   onSendMessage: (message: string) => void
   isLoading?: boolean
+  language?: string
   placeholder?: string
   className?: string
 }
@@ -16,6 +17,7 @@ interface ChatInputProps {
 export default function ChatInput({
   onSendMessage,
   isLoading = false,
+  language = 'en',
   placeholder = "Type your question or click mic to speak...",
   className
 }: ChatInputProps) {
@@ -108,6 +110,7 @@ export default function ChatInput({
       // Send to transcription API
       const formData = new FormData()
       formData.append('audio', audioBlob, 'audio.webm')
+      formData.append('language', language)
 
       const response = await fetch('/api/transcribe', {
         method: 'POST',

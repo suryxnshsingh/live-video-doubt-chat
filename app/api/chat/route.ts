@@ -46,9 +46,7 @@ export async function POST(request: NextRequest) {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt }
-      ],
-      temperature: 0.5,
-      max_tokens: 600
+      ]
     })
 
     const content = completion.choices[0]?.message?.content || ''
