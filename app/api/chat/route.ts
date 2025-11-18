@@ -17,6 +17,51 @@ interface ChatRequest {
   pdfContext?: string
 }
 
+// Classifier function to categorize questions before expensive LLM call
+function createClassifierPrompt(pdfContext: string, transcript: string, query: string): string {
+  return `You are a classifier for student questions in an online class.
+You will receive:
+- Slide Context: ${pdfContext}
+- Previous 2 minutes transcript: ${transcript}
+- Student's question: "${query}"
+
+Your job is ONLY to classify the student's question. DO NOT generate any teaching answer.
+
+DEFINITIONS:
+1) subject_based
+- Naya doubt ya question jo class / slide ke topic se related ho
+- Conceptual questions: "kya hai", "matlab", "why", "kyu", "definition", "samjhao"
+- Example maangna, explanation maangna, chahe last 2 minute se directly linked ho ya na ho
+- General subject understanding improve karne wala sawaal
+
+2) guidance
+- Seedha uss cheese se related jo ABHI transcript me samjhayi gayi
+- "kaise aaya", "ye step samjhao", "phir kya", "repeat karo", "nahi samjh aaya"
+- Calculation, step, ya example jo abhi padhaaya ussi ka clarification
+
+3) noise
+- Greetings / chit-chat: "hello", "hi", "kaise ho"
+- Sirf acknowledgment: "haan sir", "ok", "thik hai", "yes", emojis, reactions
+- Koi real subject ya guidance wala doubt nahi
+
+OUTPUT RULES:
+- Socho:
+  - Kaunsa topic padhaaya ja raha hai?
+  - Kya question ussi subject / topic ke baare me hai?
+  - Kya question abhi ke explanation ka follow-up hai (guidance) ya general subject doubt hai (subject_based)?
+  - Ya sirf noise / acknowledgment hai?
+- Reply in VALID JSON only, nothing else.
+- "reason" must be in simple Hindi, 1–2 short sentences.
+
+JSON FORMAT (no extra fields):
+{
+  "is_genuine": true/false,
+  "category": "subject_based" | "guidance" | "noise",
+  "confidence": 0.0-1.0,
+  "reason": "संक्षिप्त कारण हिंदी में"
+}`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: ChatRequest = await request.json()
@@ -31,77 +76,117 @@ export async function POST(request: NextRequest) {
 
     console.log('Chat API called with:', { message, language, transcriptLength: recentTranscript.length, pdfContextLength: pdfContext.length })
 
-    // Create the prompt based on language
-    const prompt = createPrompt(message, recentTranscript, language, studentName, pdfContext)
-    const systemPrompt = getSystemPrompt(language)
+    // STEP 1: Classify with nano model first
+    console.log('\n========== STEP 1: CLASSIFICATION WITH NANO MODEL ==========')
+    const classifierPrompt = createClassifierPrompt(pdfContext, recentTranscript, message)
 
-    // Print complete prompts for debugging
-    console.log('\n========== COMPLETE PROMPT TO GPT ==========')
-    console.log('\n--- SYSTEM PROMPT ---')
-    console.log(systemPrompt)
-    console.log('\n--- USER PROMPT ---')
-    console.log(prompt)
-    console.log('\n========== END OF PROMPT ==========\n')
+    console.log('Classifier Prompt:')
+    console.log(classifierPrompt)
 
-    // Call OpenAI API
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini', // Using GPT-4o mini for faster and cost-effective responses
+    const classificationResponse = await openai.chat.completions.create({
+      model: 'gpt-4.1-nano',
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt }
+        { role: 'user', content: classifierPrompt }
       ]
     })
 
-    const content = completion.choices[0]?.message?.content || ''
+    const classificationContent = classificationResponse.choices[0]?.message?.content || ''
+    const classification = extractJsonResponse(classificationContent)
 
-    // Parse the JSON response
-    const result = extractJsonResponse(content)
-
-    console.log('OpenAI Classification:', {
-      is_genuine: result.is_genuine,
-      category: result.category,
-      confidence: result.confidence,
-      reason: result.reason,
-      hasAnswer: !!result.answer
+    console.log('Classification Result:', {
+      is_genuine: classification.is_genuine,
+      category: classification.category,
+      confidence: classification.confidence,
+      reason: classification.reason
     })
 
-    // Log the interaction to CSV
-    await logChatInteraction({
-      timestamp: new Date().toISOString(),
-      studentName: studentName || 'unknown',
-      userQuery: message,
-      transcriptContext: recentTranscript,
-      isGenuine: result.is_genuine || false,
-      category: result.category || 'unknown',
-      confidence: result.confidence || 0,
-      reason: result.reason || '',
-      response: result.answer || null,
-      language: language
-    })
+    // STEP 2: Based on classification, decide whether to call expensive model
+    let finalResponse: any = {
+      classification: {
+        is_genuine: classification.is_genuine,
+        category: classification.category,
+        confidence: classification.confidence,
+        reason: classification.reason
+      }
+    }
 
-    // Only respond if it's a genuine doubt
-    if (result.is_genuine) {
-      return NextResponse.json({
-        reply: result.answer || 'कृपया अपना प्रश्न स्पष्ट करें।',
-        classification: {
-          is_genuine: result.is_genuine,
-          category: result.category,
-          confidence: result.confidence,
-          reason: result.reason
-        }
+    // Only call expensive model for subject_based questions
+    if (classification.category === 'subject_based') {
+      console.log('\n========== STEP 2: CALLING EXPENSIVE MODEL (subject_based) ==========')
+
+      const prompt = createPrompt(message, recentTranscript, language, studentName, pdfContext)
+      const systemPrompt = getSystemPrompt(language)
+
+      console.log('\n--- SYSTEM PROMPT ---')
+      console.log(systemPrompt)
+      console.log('\n--- USER PROMPT ---')
+      console.log(prompt)
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4.1-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ]
+      })
+
+      const content = completion.choices[0]?.message?.content || ''
+      const result = extractJsonResponse(content)
+
+      console.log('GPT-4.1-mini Response:', {
+        is_genuine: result.is_genuine,
+        category: result.category,
+        hasAnswer: !!result.answer
+      })
+
+      finalResponse.reply = result.answer || 'कृपया अपना प्रश्न स्पष्ट करें।'
+
+      // Log the interaction to CSV
+      await logChatInteraction({
+        timestamp: new Date().toISOString(),
+        studentName: studentName || 'unknown',
+        userQuery: message,
+        transcriptContext: recentTranscript,
+        isGenuine: true,
+        category: classification.category,
+        confidence: classification.confidence,
+        reason: classification.reason,
+        response: result.answer || null,
+        language: language
       })
     } else {
-      // For noise/greetings, don't respond or give a brief acknowledgment
-      return NextResponse.json({
-        reply: null,
-        classification: {
-          is_genuine: false,
-          category: result.category || 'noise',
-          confidence: result.confidence || 0,
-          reason: result.reason || 'Not a subject-related question'
-        }
+      // For guidance or noise, return simple response without expensive call
+      console.log('\n========== STEP 2: SKIPPING EXPENSIVE MODEL (guidance/noise) ==========')
+
+      let simpleReply = null
+      if (classification.category === 'guidance') {
+        simpleReply = language === 'hindi'
+          ? 'यह अभी क्लास में समझाया गया था। कृपया ध्यान से सुनें।'
+          : 'This was just explained in the class. Please pay attention.'
+      }
+      // For noise, reply stays null
+
+      finalResponse.reply = simpleReply
+
+      // Log the interaction to CSV
+      await logChatInteraction({
+        timestamp: new Date().toISOString(),
+        studentName: studentName || 'unknown',
+        userQuery: message,
+        transcriptContext: recentTranscript,
+        isGenuine: false,
+        category: classification.category,
+        confidence: classification.confidence,
+        reason: classification.reason,
+        response: simpleReply,
+        language: language
       })
     }
+
+    console.log('\n========== FINAL RESPONSE ==========')
+    console.log(JSON.stringify(finalResponse, null, 2))
+
+    return NextResponse.json(finalResponse)
 
   } catch (error) {
     console.error('Error in chat API:', error)
