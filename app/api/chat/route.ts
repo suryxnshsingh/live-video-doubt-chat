@@ -110,9 +110,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Only call expensive model for subject_based questions
-    if (classification.category === 'subject_based') {
-      console.log('\n========== STEP 2: CALLING EXPENSIVE MODEL (subject_based) ==========')
+    // Call expensive model for subject_based and guidance questions
+    if (classification.category === 'subject_based' || classification.category === 'guidance') {
+      console.log(`\n========== STEP 2: CALLING EXPENSIVE MODEL (${classification.category}) ==========`)
 
       const prompt = createPrompt(message, recentTranscript, language, studentName, pdfContext)
       const systemPrompt = getSystemPrompt(language)
@@ -155,18 +155,10 @@ export async function POST(request: NextRequest) {
         language: language
       })
     } else {
-      // For guidance or noise, return simple response without expensive call
-      console.log('\n========== STEP 2: SKIPPING EXPENSIVE MODEL (guidance/noise) ==========')
+      // For noise, return no response without expensive call
+      console.log('\n========== STEP 2: SKIPPING EXPENSIVE MODEL (noise) ==========')
 
-      let simpleReply = null
-      if (classification.category === 'guidance') {
-        simpleReply = language === 'hindi'
-          ? 'यह अभी क्लास में समझाया गया था। कृपया ध्यान से सुनें।'
-          : 'This was just explained in the class. Please pay attention.'
-      }
-      // For noise, reply stays null
-
-      finalResponse.reply = simpleReply
+      finalResponse.reply = null
 
       // Log the interaction to CSV
       await logChatInteraction({
@@ -178,7 +170,7 @@ export async function POST(request: NextRequest) {
         category: classification.category,
         confidence: classification.confidence,
         reason: classification.reason,
-        response: simpleReply,
+        response: null,
         language: language
       })
     }
